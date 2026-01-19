@@ -135,10 +135,23 @@ class RAGPipeline:
         
         # Create temporary index for filtered chunks if needed
         if filtered_chunks is not None:
-            filtered_embeddings = np.array([
-                self.chunk_embeddings[c['metadata']['embedding_id']]
-                for c in search_chunks
-            ]).astype('float32')
+            # Get embeddings for filtered chunks
+            filtered_embeddings = []
+            valid_chunks = []
+            for c in search_chunks:
+                try:
+                    emb_id = c['metadata']['embedding_id']
+                    if emb_id < len(self.chunk_embeddings):
+                        filtered_embeddings.append(self.chunk_embeddings[emb_id])
+                        valid_chunks.append(c)
+                except (KeyError, IndexError):
+                    continue
+            
+            if not valid_chunks:
+                return []
+            
+            search_chunks = valid_chunks
+            filtered_embeddings = np.array(filtered_embeddings).astype('float32')
             temp_index = faiss.IndexFlatL2(self.embedding_dim)
             temp_index.add(filtered_embeddings)
             search_index = temp_index
@@ -147,6 +160,9 @@ class RAGPipeline:
         
         # Search
         k = min(top_k, len(search_chunks))
+        if k == 0:
+            return []
+            
         distances, indices = search_index.search(query_embedding, k)
         
         # Prepare results
